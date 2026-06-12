@@ -78,6 +78,15 @@
 
       build = pkgs:
         let
+          # The build-platform cc wrapper reads its link flags from the
+          # platform-salted variable NIX_LDFLAGS_<suffixSalt> (e.g.
+          # NIX_LDFLAGS_x86_64_apple_darwin when the build host is Intel,
+          # NIX_LDFLAGS_arm64_apple_darwin on an Apple-Silicon CI runner), not
+          # the friendly NIX_LDFLAGS_FOR_BUILD alias. Derive the salt from the
+          # build stdenv's cc so the libiconv fix below targets the right var on
+          # whichever host does the cross.
+          buildSalt = pkgs.buildPackages.stdenv.cc.suffixSalt;
+
           # usePython = false drops nixpkgs' generated __fish_anypython.fish,
           # which hardcodes ${python3.interpreter} (a store path) — NixOS purity
           # again, and on x86_64-darwin the pkgsStatic python3 is marked broken,
@@ -108,6 +117,23 @@
             doInstallCheck = false;
             nativeCheckInputs = [ ];
             propagatedBuildInputs = [ ];
+
+            # On a Darwin *cross*, cargo compiles the fish-common crate's build
+            # SCRIPT for the build host, and rustc links it against the build
+            # platform's libiconv (`-liconv`) via the unprefixed build cc
+            # wrapper. fish's buildInputs.libiconv is the *target* libiconv, so
+            # the build-host link fails with "library not found for -liconv".
+            # This bites CI, which builds x86_64-darwin from an arm64 runner
+            # (GitHub retired native Intel macOS runners), and symmetrically the
+            # local Intel->arm64 cross-check; native builds (build == host) never
+            # hit it. Point the build cc at the build-platform libiconv's lib
+            # output (its dylib lives in `out`, not the `-dev` output a plain
+            # depsBuildBuild entry surfaces) via the build-salted NIX_LDFLAGS
+            # var. No-op natively, where -liconv already resolves.
+            preBuild = (o.preBuild or "")
+              + pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
+                export NIX_LDFLAGS_${buildSalt}="''${NIX_LDFLAGS_${buildSalt}:-} -L${pkgs.lib.getLib pkgs.buildPackages.libiconv}/lib"
+              '';
             cmakeFlags = (o.cmakeFlags or [ ]) ++ [ "-DWITH_DOCS=OFF" ];
 
             # nixpkgs bakes absolute /nix/store tool paths into fish's embedded
