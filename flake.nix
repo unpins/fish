@@ -87,6 +87,16 @@
           # whichever host does the cross.
           buildSalt = pkgs.buildPackages.stdenv.cc.suffixSalt;
 
+          # The libiconv fix is CROSS-ONLY. On a cross the build salt differs
+          # from the target salt, so the build-host -L lands only on the
+          # build-script link. On a NATIVE darwin build the two salts are equal,
+          # so the same -L would leak into the *target* link and pull the dynamic
+          # libiconv.2.dylib into the final binary — which the portability gate
+          # rejects (the "libiconv catch"). Native build-host links resolve
+          # -liconv on their own, so they need nothing here.
+          isDarwinCross = pkgs.stdenv.hostPlatform.isDarwin
+            && pkgs.stdenv.buildPlatform.config != pkgs.stdenv.hostPlatform.config;
+
           # usePython = false drops nixpkgs' generated __fish_anypython.fish,
           # which hardcodes ${python3.interpreter} (a store path) — NixOS purity
           # again, and on x86_64-darwin the pkgsStatic python3 is marked broken,
@@ -125,13 +135,12 @@
             # the build-host link fails with "library not found for -liconv".
             # This bites CI, which builds x86_64-darwin from an arm64 runner
             # (GitHub retired native Intel macOS runners), and symmetrically the
-            # local Intel->arm64 cross-check; native builds (build == host) never
-            # hit it. Point the build cc at the build-platform libiconv's lib
-            # output (its dylib lives in `out`, not the `-dev` output a plain
-            # depsBuildBuild entry surfaces) via the build-salted NIX_LDFLAGS
-            # var. No-op natively, where -liconv already resolves.
+            # local Intel->arm64 cross-check. Point the build cc at the
+            # build-platform libiconv's lib output (its dylib lives in `out`,
+            # not the `-dev` output a plain depsBuildBuild entry surfaces) via
+            # the build-salted NIX_LDFLAGS var. Cross-only — see isDarwinCross.
             preBuild = (o.preBuild or "")
-              + pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
+              + pkgs.lib.optionalString isDarwinCross ''
                 export NIX_LDFLAGS_${buildSalt}="''${NIX_LDFLAGS_${buildSalt}:-} -L${pkgs.lib.getLib pkgs.buildPackages.libiconv}/lib"
               '';
             cmakeFlags = (o.cmakeFlags or [ ]) ++ [ "-DWITH_DOCS=OFF" ];
