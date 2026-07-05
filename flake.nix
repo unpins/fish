@@ -100,6 +100,31 @@
             procps = pkgs.buildPackages.procps;
             coreutils = pkgs.buildPackages.coreutils;
           }).overrideAttrs (o: {
+            # Single `out` output. nixpkgs' fish declares [out doc] and bakes its
+            # own DATADIR ($out) and DOCDIR ($doc) into the binary as
+            # relocation-fallback paths. With a separate doc output those are two
+            # self-refs in the base drv, but the catalog's man/alias join
+            # (packageWithMan symlinkJoin, taken for ANY multi-output drv) makes
+            # bin/fish a symlink to the base and drags both base + base-doc into the
+            # runtime closure → closure 3, not 0-ref. Collapsing to a single output
+            # routes through strippedOrJoined's strip-IN-PLACE branch, keeping every
+            # baked path a tolerated self-ref (closure 1). The DOCDIR/DATADIR
+            # strings still ENOENT off-Nix → embedded-asset fallback, unchanged.
+            outputs = [ "out" ];
+            # nixpkgs pins CMAKE_INSTALL_DOCDIR to `${placeholder "doc"}/...`; with
+            # the doc output gone that placeholder dangles and CMake's install fails
+            # trying to mkdir it (darwin surfaces this; linux's multiout hook masks
+            # it). Re-point docdir into `out` so CHANGELOG.rst lands in
+            # $out/share/doc. A later duplicate -D wins in CMake, so appending
+            # suffices — but drop the stale flag too to keep cmakeFlags clean.
+            cmakeFlags =
+              (builtins.filter
+                (f: builtins.match ".*CMAKE_INSTALL_DOCDIR.*" f == null)
+                (o.cmakeFlags or [ ]))
+              ++ [
+                "-DCMAKE_INSTALL_DOCDIR=${builtins.placeholder "out"}/share/doc/fish"
+                "-DWITH_DOCS=OFF"
+              ];
             doCheck = false;
             # fish sets doInstallCheck = true, which pulls nativeCheckInputs
             # (procps, system_cmds, ...) as static deps — and procps-static /
@@ -108,7 +133,6 @@
             doInstallCheck = false;
             nativeCheckInputs = [ ];
             propagatedBuildInputs = [ ];
-            cmakeFlags = (o.cmakeFlags or [ ]) ++ [ "-DWITH_DOCS=OFF" ];
 
             # nixpkgs bakes absolute /nix/store tool paths into fish's embedded
             # completion/function scripts (awk -> ${gawk}/bin/awk, plus grep,
