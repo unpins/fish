@@ -42,8 +42,8 @@ fish_indent < messy.fish          # reformat a script
 fish_key_reader                   # identify terminal key sequences
 ```
 
-(They share one physical binary with `fish`, which dispatches on `argv[0]` — the
-same native multicall upstream ships.)
+(All three are the same single binary under different names — exactly how
+upstream fish ships them.)
 
 ## Man pages
 
