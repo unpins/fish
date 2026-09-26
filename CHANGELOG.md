@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [4.7.1-1] - 2026-09-26
+
 ### Fixed
 
 - fish ignored the system-wide configuration in `/etc/fish` (`config.fish`,
