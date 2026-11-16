@@ -77,18 +77,11 @@
               FISH_BUILD_DOCS = "1";
             };
 
-            # `fish_config browse` starts fish by `$__fish_bin_dir/fish`, but
-            # `unpin` keeps the binary under a versioned name, so no `fish`
-            # sits next to it. Hand the web UI the running executable instead.
+            # fish-config-bin-path.patch: `fish_config browse` runs the
+            # executable itself, not a `fish` beside it.
+            patches = [ ./patches/fish-config-bin-path.patch ];
             postPatch = ''
               patchShebangs build_tools/git_version_gen.sh
-              substituteInPlace share/functions/fish_config.fish \
-                --replace-fail 'set -lx __fish_bin_dir $__fish_bin_dir' \
-                               'set -lx __fish_bin_dir $__fish_bin_dir; set -lx __fish_bin_path (status fish-path)'
-              substituteInPlace share/tools/web_config/webconfig.py \
-                --replace-fail 'if not os.access(fish_bin_path, os.X_OK):' \
-                               'fish_bin_path = os.environ.get("__fish_bin_path") or fish_bin_path
-            if not os.access(fish_bin_path, os.X_OK):'
             '';
 
             preBuild = ''

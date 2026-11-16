@@ -1,0 +1,27 @@
+`fish_config browse` starts fish by `$__fish_bin_dir/fish`, but `unpin`
+keeps the binary under a versioned name, so no `fish` sits next to it.
+Hand the web UI the running executable instead.
+
+diff -ru a/share/functions/fish_config.fish b/share/functions/fish_config.fish
+--- a/share/functions/fish_config.fish
++++ b/share/functions/fish_config.fish
+@@ -40,7 +40,7 @@
+     if test $cmd = browse
+         if set -l python (__fish_anypython)
+             function __fish_config_webconfig -V python -a web_config
+-                set -lx __fish_bin_dir $__fish_bin_dir
++                set -lx __fish_bin_dir $__fish_bin_dir; set -lx __fish_bin_path (status fish-path)
+                 set -lx __fish_terminal_color_theme $fish_terminal_color_theme
+                 $python $web_config/webconfig.py
+             end
+diff -ru a/share/tools/web_config/webconfig.py b/share/tools/web_config/webconfig.py
+--- a/share/tools/web_config/webconfig.py
++++ b/share/tools/web_config/webconfig.py
+@@ -1317,6 +1317,7 @@
+ else:
+     fish_bin_path = os.path.join(fish_bin_dir, fish_bin_name)
+ 
++fish_bin_path = os.environ.get("__fish_bin_path") or fish_bin_path
+ if not os.access(fish_bin_path, os.X_OK):
+     print(
+         "fish could not be executed at path '%s'. "
