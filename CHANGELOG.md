@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The Linux binaries now use the same PCRE2 as macOS (nixpkgs' 10.48, was the
+  10.43 bundled with fish), so `string match -r` and `string replace -r`
+  accept the newer regex syntax, such as `(*scan_substring:`.
+
 ## [4.7.1-1] - 2026-09-26
 
 ### Fixed

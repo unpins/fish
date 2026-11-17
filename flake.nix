@@ -68,13 +68,20 @@
             nativeBuildInputs = [
               pkgs.buildPackages.gettext # msgfmt, for the localize-messages feature
               (pkgs.buildPackages.python3.withPackages (ps: [ ps.sphinx ])) # man pages
-              pkgs.buildPackages.pkg-config
+              sp.buildPackages.pkg-config # sees the target pcre2
             ];
             buildInputs = [ sp.pcre2 ] ++ lib.optional sp.stdenv.hostPlatform.isDarwin sp.libiconv;
 
             env = {
               # Sphinx missing is then an error, not a build without man pages.
               FISH_BUILD_DOCS = "1";
+              # pcre2-sys builds its own vendored PCRE2 on any musl target;
+              # link nixpkgs' pcre2 instead, as nixpkgs' fish does.
+              PCRE2_SYS_STATIC = "0";
+            } // lib.optionalAttrs sp.stdenv.hostPlatform.isLinux {
+              # Its JIT calls `__clear_cache`, which lives in libgcc; rustc
+              # links musl targets with -nodefaultlibs.
+              NIX_LDFLAGS = "-lgcc";
             };
 
             # fish-config-bin-path.patch: `fish_config browse` runs the
@@ -97,6 +104,9 @@
               [ -n "$man1" ] && [ -f "$man1/fish.1" ] || { echo "fish: no man pages built" >&2; exit 1; }
               mkdir -p $out/share/man
               cp -r "$man1" $out/share/man/man1
+              # The vendored PCRE2 (10.43) predates `(*scan_substring:`.
+              grep -q scan_substring $out/bin/fish \
+                || { echo "fish: vendored PCRE2 linked, not nixpkgs'" >&2; exit 1; }
             '';
 
             doInstallCheck = sp.stdenv.buildPlatform.canExecute sp.stdenv.hostPlatform;
@@ -116,6 +126,8 @@
               $f -c 'status get-file functions/fish_config.fish' > $TMPDIR/fish_config.fish
               grep -q '__fish_bin_path (status fish-path)' $TMPDIR/fish_config.fish \
                 || { echo "installCheck: fish_config patch not embedded" >&2; exit 1; }
+              $f -c 'string match -rq "(a)(*scan_substring:(1)a)" a' \
+                || { echo "installCheck: PCRE2 lacks (*scan_substring:" >&2; exit 1; }
               ln -s $f $TMPDIR/fish_indent
               [ "$(printf 'if true;echo x;end\n' | $TMPDIR/fish_indent)" = "$(printf 'if true\n    echo x\nend')" ] \
                 || { echo "installCheck: argv[0] fish_indent dispatch failed" >&2; exit 1; }
