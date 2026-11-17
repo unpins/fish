@@ -10,15 +10,14 @@
 
 ## [4.7.1-1] - 2026-09-26
 
-### Fixed
+Initial release — `fish` 4.7.1 as a single self-contained binary, built
+natively for Linux and macOS.
 
-- fish ignored the system-wide configuration in `/etc/fish` (`config.fish`,
-  `conf.d`, `functions`, `completions`). It now reads it, like upstream fish.
-- `string --help`, `abbr --help` and the other builtins' `--help`, as well as
-  `man string` inside fish, printed "missing man page". The manual is now
-  embedded and shown offline.
-- `unpin man fish` had only the fish overview pages; it now has a page for
-  every builtin and function too (`unpin man fish string`).
-- `fish_config browse` failed with "fish could not be executed at path …".
-- Completing a command after `sudo` or `doas` did not offer programs from
-  `/sbin`, `/usr/sbin` and `/usr/local/sbin`.
+### Added
+
+- Builds for Linux (x86_64, aarch64, i686, armv7l, ppc64le, riscv64) and macOS
+  (x86_64, aarch64).
+- The fish manual is embedded in the binary — read it with `unpin man fish`,
+  or `unpin man fish <command>` for a builtin or function.
+- `unpin install fish` also creates the `fish_indent` and `fish_key_reader`
+  commands.
