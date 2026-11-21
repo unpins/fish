@@ -53,36 +53,36 @@
       smoke = [ "-c" "status get-file man/man1/string.1 >/dev/null; and echo unpins-smoke-ok sysconf=$__fish_sysconf_dir" ];
       smokePattern = "unpins-smoke-ok sysconf=/etc/fish";
 
+      # Linux: nix-lib's engine Rust route (no gcc: prebuilt rustc, linked by
+      # the engine cc against the engine musl). darwin: nixpkgs' rustPlatform.
       build = pkgs:
         let
           sp = pkgs.pkgsStatic;
           lib = pkgs.lib;
-          upstream = sp.fish;
+          ulib = unpins-lib.lib;
+          linux = sp.stdenv.hostPlatform.isLinux;
+          # Linux: the vendored crates from the build machine's set (the musl
+          # set's vendoring runs nixpkgs' musl cargo, gcc-built), and pcre2
+          # from the engine set.
+          upstream = if linux then pkgs.buildPackages.fish else sp.fish;
+          pcre2 =
+            if linux then
+              (ulib.enginePkgsStaticFor {
+                inherit pkgs;
+                toolchain = ulib.unpinToolchain pkgs.stdenv.buildPlatform.system;
+              }).pcre2
+            else sp.pcre2;
 
-          base = sp.rustPlatform.buildRustPackage {
+          common = {
             pname = "fish";
             inherit (upstream) version src cargoDeps;
-
-            cargoBuildFlags = [ "--bin" "fish" ];
 
             nativeBuildInputs = [
               pkgs.buildPackages.gettext # msgfmt, for the localize-messages feature
               (pkgs.buildPackages.python3.withPackages (ps: [ ps.sphinx ])) # man pages
-              sp.buildPackages.pkg-config # sees the target pcre2
+              (if linux then pkgs.buildPackages.pkg-config else sp.buildPackages.pkg-config) # sees the target pcre2
             ];
-            buildInputs = [ sp.pcre2 ] ++ lib.optional sp.stdenv.hostPlatform.isDarwin sp.libiconv;
-
-            env = {
-              # Sphinx missing is then an error, not a build without man pages.
-              FISH_BUILD_DOCS = "1";
-              # pcre2-sys builds its own vendored PCRE2 on any musl target;
-              # link nixpkgs' pcre2 instead, as nixpkgs' fish does.
-              PCRE2_SYS_STATIC = "0";
-            } // lib.optionalAttrs sp.stdenv.hostPlatform.isLinux {
-              # Its JIT calls `__clear_cache`, which lives in libgcc; rustc
-              # links musl targets with -nodefaultlibs.
-              NIX_LDFLAGS = "-lgcc";
-            };
+            buildInputs = [ pcre2 ] ++ lib.optional sp.stdenv.hostPlatform.isDarwin sp.libiconv;
 
             # fish-config-bin-path.patch: `fish_config browse` runs the
             # executable itself, not a `fish` beside it.
@@ -95,10 +95,6 @@
               export HOME=$TMPDIR
             '';
 
-            # The upstream suite needs a pty, procps and a helper built with
-            # `cc`; installCheck below covers what this build changes.
-            doCheck = false;
-
             postInstall = ''
               man1=$(find target -type d -path '*/fish-docs/man/man1' | head -1)
               [ -n "$man1" ] && [ -f "$man1/fish.1" ] || { echo "fish: no man pages built" >&2; exit 1; }
@@ -109,7 +105,7 @@
                 || { echo "fish: vendored PCRE2 linked, not nixpkgs'" >&2; exit 1; }
             '';
 
-            doInstallCheck = sp.stdenv.buildPlatform.canExecute sp.stdenv.hostPlatform;
+            doInstallCheck = pkgs.stdenv.buildPlatform.canExecute sp.stdenv.hostPlatform;
             installCheckPhase = ''
               runHook preInstallCheck
               f=$out/bin/fish
@@ -136,7 +132,30 @@
 
             meta = upstream.meta // { mainProgram = "fish"; };
           };
+
+          env = {
+            # Sphinx missing is then an error, not a build without man pages.
+            FISH_BUILD_DOCS = "1";
+            # pcre2-sys builds its own vendored PCRE2 on any musl target;
+            # link nixpkgs' pcre2 instead, as nixpkgs' fish does.
+            PCRE2_SYS_STATIC = "0";
+          };
         in
-        base;
+        if linux then
+          unpins-lib.lib.mkEngineRust pkgs (common // {
+            bins = [ "fish" ];
+            cargoBuildFlags = [ "--bin" "fish" ];
+            # The target is never the build machine's (musl), so the pkg-config
+            # crate wants the cross go-ahead to use the target's pcre2.
+            env = env // { PKG_CONFIG_ALLOW_CROSS = "1"; };
+          })
+        else
+          sp.rustPlatform.buildRustPackage (common // {
+            inherit env;
+            cargoBuildFlags = [ "--bin" "fish" ];
+            # The upstream suite needs a pty, procps and a helper built with
+            # `cc`; installCheck below covers what this build changes.
+            doCheck = false;
+          });
     };
 }
